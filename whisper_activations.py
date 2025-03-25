@@ -81,18 +81,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-def plot_waveform_with_activations(
+def plot_waveform_with_activation_stats(
     waveform,
     activations,
     phoneme=None,
     utterance=None,
     sample_rate=16000,
-    agg_fn=torch.mean,
-    agg_label="mean",
-    cmap='plasma'
+    std_alpha=0.2
 ):
     """
-    Plot waveform with vertical lines for activation frames and an activation heatmap underneath.
+    Plot waveform with activation statistics (mean, min, max, std) on a secondary y-axis.
 
     Parameters:
         waveform (np.ndarray): 1D float32 array of waveform samples.
@@ -100,74 +98,72 @@ def plot_waveform_with_activations(
         phoneme (str): Optional label for phoneme.
         utterance (str): Optional label for utterance.
         sample_rate (int): Default 16000 Hz.
-        agg_fn (function): Aggregation function to reduce activations across hidden_dim (e.g., torch.mean).
-        agg_label (str): Label to display for aggregation (e.g., 'mean', 'max').
-        cmap (str): Matplotlib colormap for heatmap.
+        std_alpha (float): Transparency for std shading.
     """
     waveform = np.asarray(waveform)
     n_samples = len(waveform)
     n_frames, hidden_dim = activations.shape
-    print(n_frames, hidden_dim)
 
     # Time vectors
     time_waveform = np.linspace(0, n_samples / sample_rate, n_samples)
     frame_times = np.linspace(0, n_samples / sample_rate, n_frames)
 
-    # Aggregate activation per frame
-    activation_values = agg_fn(activations, dim=1)
-    
-    if 'values' in dir(activation_values):
-        activation_values = activation_values.values
-
-    # Normalize activation values for colormap
-    norm = plt.Normalize(vmin=activation_values.min(), vmax=activation_values.max())
-    colors = matplotlib.colormaps[cmap](norm(activation_values))
-    #plt.cm.get_cmap(cmap)(norm(activation_values))
+    # Aggregate stats over hidden dim
+    mean_vals = torch.mean(activations, dim=1).numpy()
+    min_vals = torch.min(activations, dim=1).values.numpy()
+    max_vals = torch.max(activations, dim=1).values.numpy()
+    std_vals = torch.std(activations, dim=1).numpy()
 
     # Plot
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 5), gridspec_kw={'height_ratios': [3, 0.5]})
-    
-    # Waveform plot
-    ax1.plot(time_waveform, waveform, color='black', linewidth=1)
-    for ft, color in zip(frame_times, colors):
-        ax1.axvline(x=ft, color=color, alpha=0.3, linewidth=1)
+    fig, ax1 = plt.subplots(figsize=(12, 4))
 
-    ax1.set_ylabel("Amplitude")
-    title = f"Waveform with MLP activation ({agg_label}) overlay"
+    # Left y-axis: waveform
+    ax1.plot(time_waveform, waveform, color='black', linewidth=1, label='Waveform')
+    ax1.set_ylabel("Amplitude", color='black')
+    ax1.tick_params(axis='y', labelcolor='black')
+
+    # Right y-axis: activations
+    ax2 = ax1.twinx()
+    ax2.plot(frame_times, mean_vals, label='Mean', color='purple', linewidth=2)
+    ax2.plot(frame_times, min_vals, label='Min', color='blue', linestyle='dashed')
+    ax2.plot(frame_times, max_vals, label='Max', color='red', linestyle='dashed')
+
+    # Shaded std area
+    ax2.fill_between(
+        frame_times,
+        mean_vals - std_vals,
+        mean_vals + std_vals,
+        color='purple',
+        alpha=std_alpha,
+        label='±1 STD'
+    )
+
+    ax2.set_ylabel("MLP Activation Value", color='gray')
+    ax2.tick_params(axis='y', labelcolor='gray')
+
+    # Title
+    title = f"Waveform + MLP Activation Stats"
     if phoneme:
         title += f" – Phoneme: '{phoneme}'"
     if utterance:
         title += f" – Utterance: {utterance}"
     ax1.set_title(title)
-    
-    # Heatmap
-    heatmap = ax2.imshow(
-        activation_values[None, :],  # add fake height dim
-        aspect='auto',
-        cmap=cmap,
-        extent=[0, time_waveform[-1], 0, 1]
-    )
-    ax2.set_yticks([])
-    ax2.set_xlabel("Time (s)")
-    ax2.set_title(f"Activation ({agg_label}) per frame", fontsize=10)
-    
-    # Add colorbar
-    cbar = fig.colorbar(heatmap, ax=[ax1, ax2], orientation='vertical', fraction=0.02, pad=0.02)
-    cbar.set_label(f"MLP Activation ({agg_label})", rotation=90)
 
+    # Legend
+    fig.legend(loc="upper right", bbox_to_anchor=(1, 1), bbox_transform=ax1.transAxes)
+
+    plt.xlabel("Time (s)")
     plt.tight_layout()
     plt.show()
 
-row = df.iloc[42]  # Pick any index
-waveform = np.asarray(row['segment'], dtype=np.float32)
-activations = row['activations_block2_mlp']  # adjust if you renamed column
 
-plot_waveform_with_activations(
+row = df.iloc[42]
+waveform = np.asarray(row['segment'], dtype=np.float32)
+activations = row['activations_block2_mlp']
+
+plot_waveform_with_activation_stats(
     waveform=waveform,
     activations=activations,
     phoneme=row.get('phoneme'),
-    utterance=row.get('utterance'),
-    agg_fn=torch.max,       # You could also try torch.max or torch.std
-    agg_label="max",        # Label for the aggregation method
-    cmap='plasma'            # Try also: 'viridis', 'inferno', 'coolwarm'
+    utterance=row.get('utterance')
 )
