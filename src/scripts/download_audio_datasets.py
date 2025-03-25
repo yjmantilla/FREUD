@@ -3,7 +3,7 @@ import os
 import requests
 import tarfile
 from tqdm import tqdm
-
+import pathlib
 
 roots = {
     "librispeech": "https://www.openslr.org/resources/12",
@@ -52,15 +52,18 @@ def download_files(output_dir: str, dataset: str):
     subdirectory named after the dataset)
     :param dataset: The dataset to download
     """
+    output_dir = pathlib.Path(output_dir).as_posix()
     os.makedirs(output_dir, exist_ok=True)
     filtered_files = [
-        file
+        pathlib.Path(file).as_posix()
         for file in files[dataset]
-        if not os.path.exists(os.path.join(output_dir, file))
+        if not os.path.exists(os.path.join(pathlib.Path(output_dir).as_posix(), pathlib.Path(file).as_posix()))
     ]
     for file in tqdm(filtered_files):
-        url = os.path.join(roots[dataset], file)
-        output_file = os.path.join(output_dir, file)
+        url = os.path.join(pathlib.Path(roots[dataset]).as_posix(), pathlib.Path(file).as_posix())
+        url = pathlib.Path(url).as_posix()
+        url = url.replace("https:/", "https://")
+        output_file = os.path.join(pathlib.Path(output_dir).as_posix(), pathlib.Path(file).as_posix())
         if not os.path.exists(output_file):
             r = requests.get(url, stream=True)
             r.raise_for_status()
